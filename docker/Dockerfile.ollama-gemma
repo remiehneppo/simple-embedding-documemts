@@ -1,0 +1,24 @@
+FROM alpine/ollama:latest
+
+# Set model storage path
+ENV OLLAMA_MODELS=/root/.ollama/models
+ENV OLLAMA_MODEL=embeddinggemma:300m-qat-q8_0
+
+# Pull model at build time so the exported image already contains it
+RUN ollama serve & \
+    OLLAMA_PID=$! && \
+    echo "[build] Waiting for Ollama server..." && \
+    until ollama list >/dev/null 2>&1; do sleep 2; done && \
+    echo "[build] Server ready. Pulling model embeddinggemma:300m-qat-q8_0 (this may take a while)..." && \
+    ollama pull embeddinggemma:300m-qat-q8_0 2>&1; \
+    PULL_EXIT=$?; \
+    echo "[build] Pull finished with exit code $PULL_EXIT"; \
+    kill $OLLAMA_PID; \
+    wait $OLLAMA_PID 2>/dev/null; \
+    exit $PULL_EXIT
+
+# Expose API
+EXPOSE 11434
+
+# Start Ollama normally (model already present)
+CMD ["ollama", "serve"]

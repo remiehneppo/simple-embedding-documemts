@@ -1,0 +1,64 @@
+FROM python:3.12-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    # ── PaddlePaddle runtime flags ─────────────────────────────────────────
+    # Disable oneDNN (MKL-DNN) backend — causes NotImplementedError on some
+    # CPUs with Paddle 3.x when using the PIR executor.
+    FLAGS_use_mkldnn=0 \
+    FLAGS_enable_pir_in_executor=0 \
+    # Skip HuggingFace/model-host connectivity pre-check.
+    # During build: models are downloaded regardless (only connectivity ping skipped).
+    # At runtime (offline): prevents any outbound model-update requests.
+    PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    ninja-build \
+    pkg-config \
+    curl \
+    ca-certificates \
+    wget \
+    git \
+    libopenblas-dev \
+    libgomp1 \
+    libglib2.0-0 \
+    libgl1 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Python dependencies ──────────────────────────────────────────────────────
+# Install paddlepaddle first from the official Paddle CPU index (not on PyPI).
+# Pinned to the version in requirements.txt; separated so failures are obvious.
+COPY requirements.txt ./
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install \
+        --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cpu/ \
+        "paddlepaddle==3.2.0" && \
+    pip install -r requirements.txt
+
+# ── Preload all OCR models at build time ─────────────────────────────────────
+# Running predict() exercises the full pipeline (text-detection + text-
+# recognition) so every model weight file is downloaded and baked into this
+# layer.  The image can then be used on an air-gapped machine.
+#
+# Model cache is stored at /root/.paddlex/official_models/ (PaddleX default).
+ARG OCR_LANGS_BUILD="vi,ru,en"
+ENV OCR_LANGS=${OCR_LANGS_BUILD} \
+    PYTHONPATH=/app
+
+COPY scripts/preload_models.py /app/scripts/preload_models.py
+RUN python /app/scripts/preload_models.py
+
+# ── Verify models are present ─────────────────────────────────────────────────
+RUN echo "Cached models:" && \
+    find /root/.paddlex/official_models -maxdepth 1 -mindepth 1 -type d \
+         -printf "  %f\n" 2>/dev/null || echo "  (none found — check preload step)"
+
+# This image is now ready; app code is added in Dockerfile.app

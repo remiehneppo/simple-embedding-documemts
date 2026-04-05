@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>simple-embed — Semantic Document Search</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>simple-embed</h1>
+    <p class="subtitle">Semantic document search</p>
+  </header>
+
+  <main>
+    <!-- ── Upload Panel ─────────────────────────────────────────────── -->
+    <section id="upload-section">
+      <h2>Upload Documents</h2>
+      <div id="drop-zone" class="drop-zone" role="button" tabindex="0"
+           aria-label="Drag files here or click to browse">
+        <span class="drop-icon">📂</span>
+        <p>Drag &amp; drop files here, or <label for="file-input" class="link">browse</label></p>
+        <p class="hint">Supported: PDF, DOCX, TXT, MD, CSV</p>
+        <input id="file-input" type="file" multiple
+               accept=".pdf,.docx,.txt,.md,.csv" hidden />
+      </div>
+
+      <div id="upload-queue"></div>
+    </section>
+
+    <!-- ── Search Panel ──────────────────────────────────────────────── -->
+    <section id="search-section">
+      <h2>Search</h2>
+      <div class="search-bar">
+        <input id="search-input" type="text" placeholder="Enter your query…"
+               aria-label="Search query" autocomplete="off" />
+        <select id="mode-select" aria-label="Search mode">
+          <option value="all">All modes</option>
+          <option value="semantic">Semantic</option>
+          <option value="exact">Exact</option>
+          <option value="regex">Regex</option>
+        </select>
+        <input id="topk-input" type="number" value="10" min="1" max="100"
+               aria-label="Max results" title="Max results per layer" />
+        <button id="search-btn" class="btn-primary">Search</button>
+      </div>
+
+      <!-- Result tabs -->
+      <div id="tabs" class="tabs hidden">
+        <button class="tab-btn active" data-tab="merged">Merged</button>
+        <button class="tab-btn" data-tab="semantic">Semantic</button>
+        <button class="tab-btn" data-tab="exact">Exact</button>
+        <button class="tab-btn" data-tab="regex">Regex</button>
+      </div>
+
+      <div id="results-container"></div>
+    </section>
+
+    <!-- ── Documents Panel ───────────────────────────────────────────── -->
+    <section id="docs-section">
+      <h2>Indexed Documents <button id="refresh-docs-btn" class="btn-small">↻</button></h2>
+      <div id="docs-list" class="docs-list">
+        <p class="dim">Click ↻ to load the document list.</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

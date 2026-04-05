@@ -1,0 +1,81 @@
+services:
+
+  # ── Ollama (embedding model server) ────────────────────────────────────────
+  ollama:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ollama-gemma
+    restart: unless-stopped
+    expose:
+      - "11434"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:11434/api/tags"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+
+  # ── Base image (system packages + pip deps + OCR models) ───────────────────
+  # Build-only service: `docker-compose --profile base build base` produces
+  # simple-embed-base. The 'app' service depends on this image being present.
+  base:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.base
+      args:
+        OCR_LANGS_BUILD: "vi,ru,en"
+    image: simple-embed-base
+    profiles:
+      - base
+    command: echo "Base image built."
+
+  # ── App (FastAPI) ───────────────────────────────────────────────────────────
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.app
+    image: simple-embed-app
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      # Server
+      HOST: 0.0.0.0
+      PORT: 8000
+      DEBUG: "false"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      # Paths inside container
+      STORAGE_PATH: /app/storage
+      DOCUMENTS_PATH: /app/storage/documents
+      CHROMA_PATH: /app/storage/chroma_db
+      LOG_PATH: /app/logs
+      # Ollama
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-embeddinggemma:300m-qat-q8_0}"
+      EMBED_BATCH_SIZE: "${EMBED_BATCH_SIZE:-32}"
+      OLLAMA_TIMEOUT: "${OLLAMA_TIMEOUT:-60.0}"
+      OLLAMA_MAX_RETRIES: "${OLLAMA_MAX_RETRIES:-3}"
+      # Chunking
+      CHUNK_MAX_WORDS: "${CHUNK_MAX_WORDS:-50}"
+      CHUNK_OVERLAP_WORDS: "${CHUNK_OVERLAP_WORDS:-10}"
+      CHUNK_MIN_WORDS: "${CHUNK_MIN_WORDS:-5}"
+      # ChromaDB
+      CHROMA_COLLECTION: "${CHROMA_COLLECTION:-documents}"
+      # Search
+      SEARCH_TOP_K: "${SEARCH_TOP_K:-10}"
+      SEARCH_REGEX_POOL_LIMIT: "${SEARCH_REGEX_POOL_LIMIT:-5000}"
+      # OCR
+      OCR_LANGS: "${OCR_LANGS:-en,vi,ru}"
+    volumes:
+      - ../storage:/app/storage
+      - ../logs:/app/logs
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
