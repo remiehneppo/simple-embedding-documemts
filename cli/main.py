@@ -72,7 +72,7 @@ def cli(ctx: click.Context, api_url: str) -> None:
 # ── upload ────────────────────────────────────────────────────────────────────
 
 @cli.command()
-@click.argument("files", nargs=-1, type=click.Path(exists=True))
+@click.argument("files", nargs=-1, type=click.Path(exists=True, path_type=Path))
 @click.option(
     "--folder",
     "-f",
@@ -97,7 +97,7 @@ def cli(ctx: click.Context, api_url: str) -> None:
 @click.pass_context
 def upload(
     ctx: click.Context,
-    files: tuple[str, ...],
+    files: tuple[Path, ...],
     folder: str | None,
     ext: str | None,
     workers: int,
@@ -107,17 +107,33 @@ def upload(
     api_url: str = ctx.obj["api_url"]
 
     # ── Collect all target file paths ──────────────────────────────────────
-    targets: list[Path] = [Path(f) for f in files]
+    allowed_exts: frozenset[str]
+    if ext:
+        allowed_exts = frozenset(
+            "." + e.strip().lstrip(".").lower() for e in ext.split(",") if e.strip()
+        )
+    else:
+        allowed_exts = SUPPORTED_EXTENSIONS
+
+    targets: list[Path] = []
+    for p in files:
+        if p.is_dir():
+            found = sorted(
+                item for item in p.rglob("*")
+                if item.is_file() and item.suffix.lower() in allowed_exts
+            )
+            targets.extend(found)
+        elif p.is_file():
+            if p.suffix.lower() in allowed_exts:
+                targets.append(p)
+            else:
+                click.echo(
+                    f"  {click.style(p.name, bold=True)}  "
+                    f"{click.style('SKIP', fg='yellow')} (unsupported extension)",
+                    err=True,
+                )
 
     if folder:
-        allowed_exts: frozenset[str]
-        if ext:
-            allowed_exts = frozenset(
-                "." + e.strip().lstrip(".").lower() for e in ext.split(",") if e.strip()
-            )
-        else:
-            allowed_exts = SUPPORTED_EXTENSIONS
-
         folder_path = Path(folder)
         found = sorted(
             f for f in folder_path.rglob("*")
