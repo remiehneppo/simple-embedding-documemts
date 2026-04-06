@@ -42,7 +42,8 @@ class Settings(BaseSettings):
     search_regex_pool_limit: int = 5000  # Max docs scanned for regex search
 
     # OCR
-    ocr_langs: str = "en,vi,ru"
+    ocr_langs: str = "vie,rus"
+    ocr_engine: str = "tesseract"  # "tesseract" | "paddle"
 
 
 settings = Settings()

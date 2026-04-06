@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>simple-embed — Semantic Document Search</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=4" />
 </head>
 <body>
   <header>
@@ -24,6 +24,34 @@
         <input id="file-input" type="file" multiple
                accept=".pdf,.docx,.txt,.md,.csv" hidden />
       </div>
+
+      <!-- OCR options (shown for PDF uploads) -->
+      <details id="ocr-options" class="ocr-options">
+        <summary>OCR options <span class="hint">(PDF only)</span></summary>
+        <div class="ocr-options-body">
+          <fieldset>
+            <legend>Engine</legend>
+            <label><input type="radio" name="ocr_engine" value="tesseract" checked /> Tesseract (recommended)</label>
+            <label><input type="radio" name="ocr_engine" value="paddle" /> PaddleOCR</label>
+          </fieldset>
+          <fieldset>
+            <legend>Languages</legend>
+            <label><input type="checkbox" name="ocr_lang" value="vie" checked /> Tiếng Việt</label>
+            <label><input type="checkbox" name="ocr_lang" value="rus" /> Русский</label>
+            <label><input type="checkbox" name="ocr_lang" value="eng" /> English</label>
+          </fieldset>
+          <fieldset>
+            <legend>Mode</legend>
+            <label><input type="checkbox" id="dry-run-check" /> Dry run — preview only, do not store</label>
+            <label id="dry-run-pages-row" class="dry-run-pages-row" style="display:none">
+              Pages to OCR:
+              <input id="dry-run-pages" type="number" value="3" min="1" max="999"
+                     title="Limit OCR to first N pages" />
+              <span class="hint">(0 = all pages)</span>
+            </label>
+          </fieldset>
+        </div>
+      </details>
 
       <div id="upload-queue"></div>
     </section>
@@ -65,8 +93,21 @@
     </section>
   </main>
 
+  <!-- ── Dry-run Preview Modal (portal — outside main for correct stacking) ── -->
+  <div id="dry-run-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="dry-run-title">
+    <div class="modal-backdrop" id="dry-run-backdrop"></div>
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 id="dry-run-title">Dry Run Preview</h3>
+        <button class="modal-close" id="dry-run-close" aria-label="Close">✕</button>
+      </div>
+      <div id="dry-run-meta" class="dry-run-meta"></div>
+      <div id="dry-run-body" class="dry-run-body"></div>
+    </div>
+  </div>
+
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

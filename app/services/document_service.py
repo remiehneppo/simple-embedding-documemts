@@ -19,6 +19,7 @@ from app.services.embedder import embed_texts
 from app.services.extractor_factory import get_extractor
 from app.services.extractor.pdf_text import PdfTextExtractor
 from app.services.extractor.pdf_ocr import PdfOcrExtractor
+from app.services.extractor.pdf_tesseract import PdfTesseractExtractor
 
 log = get_logger(__name__)
 
@@ -34,6 +35,8 @@ def _compute_sha256(file_path: Path) -> str:
 async def process_document(
     file_path: Path,
     original_filename: str,
+    ocr_langs: list[str] | None = None,
+    ocr_engine: str | None = None,
 ) -> dict:
     """
     Orchestrate the full ingestion pipeline for one document.
@@ -47,7 +50,7 @@ async def process_document(
     log.info("document.start", filename=original_filename, path=str(file_path))
 
     try:
-        return await _run_pipeline(doc_id, file_path, original_filename)
+        return await _run_pipeline(doc_id, file_path, original_filename, ocr_langs, ocr_engine)
     except Exception:
         raise
     finally:
@@ -58,6 +61,8 @@ async def _run_pipeline(
     doc_id: str,
     file_path: Path,
     original_filename: str,
+    ocr_langs: list[str] | None = None,
+    ocr_engine: str | None = None,
 ) -> dict:
     # ── 1. Deduplication check (SHA-256) ────────────────────────────────────
     file_hash = _compute_sha256(file_path)
@@ -80,7 +85,7 @@ async def _run_pipeline(
 
     # ── 2. Select extractor ─────────────────────────────────────────────────
     try:
-        extractor = get_extractor(file_path)
+        extractor = get_extractor(file_path, ocr_langs=ocr_langs, ocr_engine=ocr_engine)
     except UnsupportedFileTypeError:
         log.error("document.unsupported_type", filename=original_filename, exc_info=True)
         raise
@@ -102,13 +107,19 @@ async def _run_pipeline(
     # ── 3b. Fallback: if PdfTextExtractor yielded nothing, retry with OCR ───
     # This handles scanned PDFs that slipped through the has_text_layer check.
     if not pages and isinstance(extractor, PdfTextExtractor):
-        langs = [lang.strip() for lang in settings.ocr_langs.split(",") if lang.strip()]
+        langs = ocr_langs or [lang.strip() for lang in settings.ocr_langs.split(",") if lang.strip()]
+        engine = (ocr_engine or settings.ocr_engine).lower()
         log.warning(
             "document.text_extraction_empty_fallback_ocr",
             filename=original_filename,
             langs=langs,
+            engine=engine,
         )
-        ocr_extractor = PdfOcrExtractor(langs=langs)
+        ocr_extractor: PdfTesseractExtractor | PdfOcrExtractor
+        if engine == "tesseract":
+            ocr_extractor = PdfTesseractExtractor(langs=langs)
+        else:
+            ocr_extractor = PdfOcrExtractor(langs=langs)
         try:
             for page in ocr_extractor.extract(file_path):
                 pages.append(page)
@@ -226,6 +237,107 @@ def list_documents(limit: int = 200) -> list[dict]:
         if doc_id and doc_id not in seen:
             seen[doc_id] = meta
     return list(seen.values())
+
+
+async def dry_run_document(
+    file_path: Path,
+    original_filename: str,
+    ocr_langs: list[str] | None = None,
+    ocr_engine: str | None = None,
+    max_pages: int = 0,
+) -> dict:
+    """
+    Extract, clean, and chunk a document without embedding or storing anything.
+
+    Args:
+        max_pages: Limit extraction to the first N pages. 0 means all pages.
+
+    Returns a dict compatible with DryRunResponse.
+    """
+    resolved_langs = ocr_langs or [l.strip() for l in settings.ocr_langs.split(",") if l.strip()]
+    resolved_engine = (ocr_engine or settings.ocr_engine).lower()
+
+    # Safety guard: this function must NEVER write to the database.
+    # If called from within a context that has already bound doc_id (i.e. from
+    # _run_pipeline), something is wrong — bail out immediately.
+    structlog.contextvars.bind_contextvars(dry_run=True)
+    log.info("document.dry_run.start", filename=original_filename)
+
+    try:
+        # ── Select extractor ────────────────────────────────────────────────
+        extractor = get_extractor(file_path, ocr_langs=ocr_langs, ocr_engine=ocr_engine)
+
+        # ── Extract pages ───────────────────────────────────────────────────
+        pages = []
+        try:
+            for page in extractor.extract(file_path):
+                pages.append(page)
+        except Exception as exc:
+            raise ExtractionError(str(file_path), str(exc)) from exc
+
+        # Fallback OCR (same logic as main pipeline)
+        if not pages and isinstance(extractor, PdfTextExtractor):
+            log.warning("document.dry_run.fallback_ocr", filename=original_filename)
+            ocr_extractor: PdfTesseractExtractor | PdfOcrExtractor
+            if resolved_engine == "tesseract":
+                ocr_extractor = PdfTesseractExtractor(langs=resolved_langs)
+            else:
+                ocr_extractor = PdfOcrExtractor(langs=resolved_langs)
+            try:
+                for page in ocr_extractor.extract(file_path):
+                    pages.append(page)
+            except Exception as exc:
+                raise ExtractionError(str(file_path), str(exc)) from exc
+
+        # Apply page limit
+        if max_pages and max_pages > 0:
+            pages = pages[:max_pages]
+            log.debug("document.dry_run.page_limit", max_pages=max_pages, actual=len(pages))
+
+        # ── Clean + chunk (no embed, no store) ──────────────────────────────
+        from app.models.schemas import DryRunPage
+
+        preview: list[DryRunPage] = []
+        total_chunks = 0
+        for page in pages:
+            cleaned = clean_text(page.text)
+            if not cleaned:
+                preview.append(DryRunPage(
+                    page_number=page.page_number,
+                    raw_text=page.text,
+                    chunks=[],
+                ))
+                continue
+            page_chunks = chunk_text(
+                cleaned,
+                max_words=settings.chunk_max_words,
+                overlap_words=settings.chunk_overlap_words,
+                min_words=settings.chunk_min_words,
+            )
+            total_chunks += len(page_chunks)
+            preview.append(DryRunPage(
+                page_number=page.page_number,
+                raw_text=page.text,
+                chunks=page_chunks,
+            ))
+
+        log.info(
+            "document.dry_run.done",
+            filename=original_filename,
+            pages=len(pages),
+            chunks=total_chunks,
+        )
+
+        return {
+            "file_name": original_filename,
+            "ocr_engine": resolved_engine,
+            "ocr_langs": resolved_langs,
+            "pages": len(pages),
+            "total_chunks": total_chunks,
+            "preview": [p.model_dump() for p in preview],
+        }
+    finally:
+        structlog.contextvars.clear_contextvars()
 
 
 def delete_document(doc_id: str) -> int:

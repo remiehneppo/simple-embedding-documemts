@@ -40,7 +40,7 @@ def chunk_text(
     text: str,
     max_words: int = 50,
     overlap_words: int = 10,
-    min_words: int = 5,
+    min_words: int = 30,
 ) -> list[str]:
     """
     Split *text* into overlapping chunks of at most *max_words* words.

@@ -31,6 +31,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsm6 \
     libxext6 \
     libxrender1 \
+    # ── Tesseract OCR + language packs ──────────────────────────────────────
+    tesseract-ocr \
+    tesseract-ocr-vie \
+    tesseract-ocr-rus \
+    tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Python dependencies ──────────────────────────────────────────────────────
@@ -51,14 +56,20 @@ RUN pip install --upgrade pip setuptools wheel && \
 # Model cache is stored at /root/.paddlex/official_models/ (PaddleX default).
 ARG OCR_LANGS_BUILD="vi,ru,en"
 ENV OCR_LANGS=${OCR_LANGS_BUILD} \
+    OCR_ENGINE=tesseract \
     PYTHONPATH=/app
 
 COPY scripts/preload_models.py /app/scripts/preload_models.py
 RUN python /app/scripts/preload_models.py
 
-# ── Verify models are present ─────────────────────────────────────────────────
-RUN echo "Cached models:" && \
+# ── Verify PaddleOCR models are present ──────────────────────────────────────
+RUN echo "Cached PaddleOCR models:" && \
     find /root/.paddlex/official_models -maxdepth 1 -mindepth 1 -type d \
          -printf "  %f\n" 2>/dev/null || echo "  (none found — check preload step)"
+
+# ── Verify Tesseract language data ───────────────────────────────────────────
+RUN echo "Tesseract version: $(tesseract --version 2>&1 | head -1)" && \
+    echo "Installed language packs:" && \
+    tesseract --list-langs 2>&1 | grep -E 'vie|rus|eng' | sed 's/^/  /'
 
 # This image is now ready; app code is added in Dockerfile.app

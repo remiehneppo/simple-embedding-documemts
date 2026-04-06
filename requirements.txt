@@ -6,6 +6,7 @@ httpx
 pymupdf
 Pillow
 paddleocr
+pytesseract
 python-docx
 chromadb
 aiofiles

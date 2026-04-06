@@ -30,17 +30,78 @@ dropZone.addEventListener("drop", e => {
 });
 fileInput.addEventListener("change", () => handleFiles([...fileInput.files]));
 
-function handleFiles(files) {
-  files.forEach(uploadFile);
+// ── Dry-run modal ─────────────────────────────────────────────────────────────
+const dryRunModal    = document.getElementById("dry-run-modal");
+const dryRunBackdrop = document.getElementById("dry-run-backdrop");
+const dryRunClose    = document.getElementById("dry-run-close");
+const dryRunMeta     = document.getElementById("dry-run-meta");
+const dryRunBody     = document.getElementById("dry-run-body");
+
+function openDryRunModal(data) {
+  dryRunMeta.innerHTML = `
+    <span class="dr-pill">engine: ${escHtml(data.ocr_engine)}</span>
+    <span class="dr-pill">langs: ${escHtml((data.ocr_langs || []).join(", "))}</span>
+    <span class="dr-pill">${data.pages} page(s)</span>
+    <span class="dr-pill">${data.total_chunks} chunk(s)</span>`;
+
+  dryRunBody.innerHTML = (data.preview || []).map(page => `
+<div class="dr-page">
+  <div class="dr-page-header">Page ${page.page_number}</div>
+  <div class="dr-section-label">Raw extracted text</div>
+  <pre class="dr-raw">${escHtml(page.raw_text || "(empty)")}</pre>
+  <div class="dr-section-label">Chunks (${page.chunks.length})</div>
+  <ol class="dr-chunks">
+    ${page.chunks.map(c => `<li><pre>${escHtml(c)}</pre></li>`).join("")}
+  </ol>
+</div>`).join("") || '<p class="dim">No pages extracted.</p>';
+
+  dryRunModal.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
 }
 
-async function uploadFile(file) {
+function closeDryRunModal() {
+  dryRunModal.classList.add("hidden");
+  document.body.style.overflow = "";
+}
+
+dryRunClose.addEventListener("click", closeDryRunModal);
+dryRunBackdrop.addEventListener("click", closeDryRunModal);
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeDryRunModal(); });
+
+// Show/hide the page-limit row when dry-run is toggled
+document.getElementById("dry-run-check").addEventListener("change", function () {
+  const row = document.getElementById("dry-run-pages-row");
+  if (row) row.style.display = this.checked ? "" : "none";
+});
+
+function handleFiles(files) {
+  // Capture OCR settings once for this batch of uploads
+  const engine   = document.querySelector('input[name="ocr_engine"]:checked')?.value || "tesseract";
+  const langs    = [...document.querySelectorAll('input[name="ocr_lang"]:checked')].map(el => el.value);
+  const isDryRun = document.getElementById("dry-run-check")?.checked ?? false;
+  const dryRunPages = isDryRun
+    ? parseInt(document.getElementById("dry-run-pages")?.value || "3", 10)
+    : 0;
+  files.forEach(file => uploadFile(file, engine, langs, isDryRun, dryRunPages));
+}
+
+async function uploadFile(file, ocrEngine, ocrLangs, isDryRun, dryRunPages) {
   const item = createQueueItem(file.name);
   uploadQueue.prepend(item.el);
-  item.setBadge("uploading", "Uploading…");
+  item.setBadge("uploading", isDryRun ? "Analysing…" : "Uploading…");
 
   const fd = new FormData();
   fd.append("file", file, file.name);
+
+  // Append OCR params for PDF; dry_run applies to all types
+  if (file.name.toLowerCase().endsWith(".pdf")) {
+    fd.append("ocr_engine", ocrEngine);
+    ocrLangs.forEach(lang => fd.append("ocr_langs", lang));
+  }
+  if (isDryRun) {
+    fd.append("dry_run", "true");
+    fd.append("dry_run_pages", String(dryRunPages));
+  }
 
   try {
     const resp = await fetch(`${API}/documents/upload`, { method: "POST", body: fd });
@@ -49,6 +110,13 @@ async function uploadFile(file) {
     if (!resp.ok) {
       item.setBadge("error", `Error ${resp.status}`);
       showToast(data.detail || `Upload failed (${resp.status})`, "error");
+      return;
+    }
+
+    // Dry-run: open preview modal instead of normal badge
+    if (isDryRun) {
+      item.setBadge("skip", `Dry run — ${data.pages} page(s), ${data.total_chunks} chunk(s)`);
+      openDryRunModal(data);
       return;
     }
 

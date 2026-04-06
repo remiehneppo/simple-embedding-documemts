@@ -109,7 +109,19 @@ async def health():
 # ── Static frontend (served last so API routes take priority) ─────────────────
 _frontend = Path(__file__).parent.parent / "frontend"
 if _frontend.exists():
-    app.mount("/", StaticFiles(directory=str(_frontend), html=True), name="frontend")
+    from fastapi.responses import Response
+    from starlette.staticfiles import StaticFiles as _StaticFiles
+
+    class NoCacheStaticFiles(_StaticFiles):
+        """StaticFiles subclass that disables browser caching in development."""
+
+        async def get_response(self, path: str, scope):
+            response: Response = await super().get_response(path, scope)
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            return response
+
+    app.mount("/", NoCacheStaticFiles(directory=str(_frontend), html=True), name="frontend")
 
 
 if __name__ == "__main__":

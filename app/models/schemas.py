@@ -46,6 +46,21 @@ class DeleteResponse(BaseModel):
     chunks_removed: int
 
 
+class DryRunPage(BaseModel):
+    page_number: int
+    raw_text: str
+    chunks: list[str]
+
+
+class DryRunResponse(BaseModel):
+    file_name: str
+    ocr_engine: str
+    ocr_langs: list[str]
+    pages: int
+    total_chunks: int
+    preview: list[DryRunPage]
+
+
 class HealthResponse(BaseModel):
     status: str
     ollama_reachable: bool

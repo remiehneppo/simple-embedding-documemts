@@ -59,7 +59,8 @@ services:
       SEARCH_TOP_K: "${SEARCH_TOP_K:-10}"
       SEARCH_REGEX_POOL_LIMIT: "${SEARCH_REGEX_POOL_LIMIT:-5000}"
       # OCR
-      OCR_LANGS: "${OCR_LANGS:-en,vi,ru}"
+      OCR_LANGS: "${OCR_LANGS:-vie,rus}"
+      OCR_ENGINE: "${OCR_ENGINE:-tesseract}"
     volumes:
       - ../storage:/app/storage
       - ../logs:/app/logs
