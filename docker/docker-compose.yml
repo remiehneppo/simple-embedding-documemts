@@ -2,18 +2,16 @@ services:
 
   # ── Ollama (embedding model server) ────────────────────────────────────────
   ollama:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.ollama-gemma
+    image: ollama-gemma:latest
     restart: unless-stopped
     expose:
       - "11434"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:11434/api/tags"]
+      test: ["CMD", "ollama", "list"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 30
-      start_period: 120s
+      start_period: 30s
 
   # ── Base image (system packages + pip deps + OCR models) ───────────────────
   # Build-only service: `docker-compose --profile base build base` produces
@@ -31,9 +29,6 @@ services:
 
   # ── App (FastAPI) ───────────────────────────────────────────────────────────
   app:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.app
     image: simple-embed-app
     ports:
       - "${PORT:-8000}:8000"
@@ -42,7 +37,7 @@ services:
       HOST: 0.0.0.0
       PORT: 8000
       DEBUG: "false"
-      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
       # Paths inside container
       STORAGE_PATH: /app/storage
       DOCUMENTS_PATH: /app/storage/documents
